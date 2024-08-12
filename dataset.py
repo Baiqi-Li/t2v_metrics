@@ -1224,11 +1224,170 @@ class Pickapic_v1(Dataset):
         return acc, probs
 
 
+class GenAIBench_Image_1600(Dataset):
+    # GenAIBench with 1600 prompts x 6 images (from 6 models)
+    def __init__(self,
+                 image_preprocess=None,
+                 root_dir="./",
+                 download=True,
+                 return_image_paths=True):
+        self.root_dir = os.path.join(root_dir, 'GenAI-Image-1600')
+        self.models = ['DALLE_3', 'SDXL_Turbo', 'DeepFloyd_I_XL_v1', 'Midjourney_6', 'SDXL_2_1', 'SDXL_Base']
+        
+        self.image_preprocess = image_preprocess
+        self.return_image_paths = return_image_paths
+        if self.return_image_paths:
+            assert self.image_preprocess is None, "Cannot return image paths and apply transforms"
+        
+        self.download_links = {
+            model_name: f"https://huggingface.co/datasets/BaiqiL/GenAI-Bench-1600-Images/resolve/main/{model_name}.zip" for model_name in self.models
+        }
+        if not os.path.exists(self.root_dir):
+            if download:
+                import subprocess
+                os.makedirs(self.root_dir, exist_ok=True)
+                for model in self.models:
+                    model_file_name = self.download_links[model].split('/')[-1]
+                    image_zip_file = os.path.join(self.root_dir, model_file_name)
+                    if not os.path.exists(image_zip_file):
+                        print("-----------------")
+                        print(self.download_links[model])
+                        print(model_file_name)
+                        print(self.root_dir)
+                        subprocess.call(
+                            ["wget", self.download_links[model], "-O", model_file_name], cwd=self.root_dir
+                        )
+                    model_dir = os.path.join(self.root_dir, model)
+                    if not os.path.exists(model_dir):
+                        print(model_file_name)
+                        print(self.root_dir)
+                        subprocess.call(["unzip", "-q", model_file_name], cwd=self.root_dir)
+        
+        for filename in ['genai_image', 'genai_skills']:
+            path = os.path.join(self.root_dir, f"{filename}.json")
+            if not os.path.exists(path):
+                if download:
+                    import subprocess
+                    download_link = f"https://huggingface.co/datasets/BaiqiL/GenAI-Bench-1600-Images/resolve/main/{filename}.json"
+                    model_file_name = download_link.split('/')[-1]
+                    subprocess.call(
+                        ["wget", download_link, "-O", model_file_name], cwd=self.root_dir
+                    )
+        
+        self.dataset = json.load(open(os.path.join(self.root_dir, f"genai_image.json"), 'r'))
+        print(f"Loaded dataset: genai_image.json")
+        
+        self.images = [] # list of images
+        self.prompt_to_images = {}
+        for model in self.models:
+            for prompt_idx in self.dataset:
+                if not model in self.dataset[prompt_idx]['models']:
+                    continue
+                
+                self.images.append({
+                    'prompt_idx': prompt_idx,
+                    'prompt': self.dataset[prompt_idx]['prompt'],
+                    'model': model,
+                    'image': os.path.join(self.root_dir, model, f"{prompt_idx}.jpeg"),
+                    'human_alignment': self.dataset[prompt_idx]['models'][model],
+                })
+                if prompt_idx not in self.prompt_to_images:
+                    self.prompt_to_images[prompt_idx] = []
+                self.prompt_to_images[prompt_idx].append(len(self.images) - 1)
+                
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        item = self.images[idx]
+        
+        image_paths = [item['image']]
+            
+        if self.return_image_paths:
+            image = image_paths
+        else:
+            image = [Image.open(image_path).convert('RGB') for image_path in image_paths]
+            image = [self.image_preprocess(img) for img in image]
+        
+        texts = [str(item['prompt'])]
+        item = {"images": image, "texts": texts}
+        return item
+    
+    def correlation(self, our_scores, human_scores, verbose=True):
+        pearson = calc_pearson(human_scores, our_scores)
+        if verbose:
+            print(f"Pearson's Correlation (no grouping): ", pearson)
+            
+        kendall_b = calc_metric(human_scores, our_scores, variant="tau_b")
+        if verbose:
+            print(f'Kendall Tau-B Score (no grouping): ', kendall_b)
+            
+        pairwise_acc = calc_metric(human_scores, our_scores, variant="pairwise_acc_with_tie_optimization")
+        if verbose:
+            print(f'Pairwise Accuracy Score (no grouping): ', pairwise_acc)
+            
+        results = {
+            'pearson': pearson,
+            'kendall_b': kendall_b,
+            'pairwise_acc': pairwise_acc,
+        }
+        return results
+    
+    def evaluate_scores(self, scores):
+        scores_i2t = scores
+        human_avg_scores_alignment = [np.array(self.images[idx]['human_alignment']).mean() for idx in range(len(self.images))]
+        our_scores = scores_i2t.mean(axis=1)
+        our_scores = [float(our_scores[idx][0]) for idx in range(len(self.images))]
+        alignment_correlation = self.correlation(our_scores, human_avg_scores_alignment)
+        results = {
+            'alignment': alignment_correlation,
+        }
+        return results
+
+    # def evaluate_scores_per_skill(self, scores):
+    #     scores_i2t = scores
+    #     our_scores = scores_i2t.mean(axis=1)
+    #     our_scores = [float(our_scores[idx][0]) for idx in range(len(self.images))]
+    #     human_avg_scores_alignment = [np.array(self.images[idx]['human_alignment']).mean() for idx in range(len(self.images))]
+
+    #     tag_file = os.path.join(self.root_dir, "genai_skills.json")
+    #     tags = json.load(open(tag_file))
+
+    #     items_by_tag = {}
+    #     for tag in tags:
+    #         items_by_tag[tag] = []
+    #         for prompt_idx in tags[tag]:
+    #             for image_idx in self.prompt_to_images[f"{prompt_idx:05d}"]:
+    #                 items_by_tag[tag].append(image_idx)
+
+    #     tag_results = {}
+    #     for tag in tags:
+    #         our_scores_perTag = [our_scores[idx] for idx in items_by_tag[tag]]
+    #         human_scores_perTag = [human_avg_scores_alignment[idx] for idx in items_by_tag[tag]]
+    #         alignment_correlation_perTag = self.correlation(our_scores_perTag, human_scores_perTag, verbose=False)
+    #         tag_results[tag] = {
+    #             'alignment': alignment_correlation_perTag
+    #         }
+        
+    #     print(f"Alignment Performance in Each Dimension")
+    #     tag_header = f"{'Metrics':<20}" + " ".join([f"{tag:<20}" for tag in tag_results])
+    #     print(tag_header)
+    #     for metric in ['pearson', 'kendall_b', 'pairwise_acc']:
+    #         if metric == 'pairwise_acc': #tuple
+    #             metric_scores = [tag_results[tag]['alignment'][metric][0] for tag in tag_results]
+    #         else:
+    #             metric_scores = [tag_results[tag]['alignment'][metric] for tag in tag_results]
+    #         metric_scores = " ".join([f"{score:.2f}" for score in metric_scores])
+    #         metric_scores = f"{metric:<20}" + metric_scores
+    #         print(metric_scores)
+    #     print()
+
+    #     return tag_results
 class GenAI_Bench_Image_800(Dataset):
     # GenAIBench with 800 prompts x 6 images (from 6 models)
     def __init__(self,
                  image_preprocess=None,
-                 root_dir="/data3/baiqil/GenAI-1600/",
+                 root_dir="/data3/baiqil/GenAI-1600-raw",
                  download=True,
                  return_image_paths=True):
         self.root_dir = os.path.join(root_dir, 'GenAI_corePrompts')
