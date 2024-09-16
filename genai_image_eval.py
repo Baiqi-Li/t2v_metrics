@@ -6,7 +6,7 @@
 import argparse
 import os
 import t2v_metrics
-from dataset import GenAIBench_Image
+from dataset import GenAIBench_Image, GenAIBench_1600
 import json
 import torch
 import numpy as np
@@ -110,10 +110,11 @@ def main():
     if not os.path.exists(args.root_dir):
         os.makedirs(args.root_dir)
     
-    
     os.makedirs(args.result_dir, exist_ok=True)
-    dataset = GenAIBench_Image(root_dir=args.root_dir)
-    result_path = f"{args.result_dir}/{args.model}_527_prompts.pt"
+
+    dataset =  GenAIBench_1600(root_dir=args.root_dir)
+    result_path = f"{args.result_dir}/{args.model}_1600_prompts.pt"
+
     if os.path.exists(result_path):
         print(f"Result file {result_path} already exists. Skipping.")
         scores = torch.load(result_path)
@@ -153,9 +154,19 @@ def main():
     our_scores = scores.mean(axis=1)
     show_performance_per_skill(our_scores, dataset, print_std=True)    
     
-    print("Alignment Performance")
-    ### Alignment performance
+    print("Overall Alignment Performance")
+    ### Overall Alignment performance
     dataset.evaluate_scores(scores)
+
+    ### Alignment performance per skill
+    print("Evaluating scores of each skill for model:", args.model)
+    skill_result = dataset.evaluate_scores_per_skill(scores)
+    print("Results saved to:", f"{args.result_dir}/{args.model}_1600_per_skill.json")
+    output_file = f"{args.result_dir}/{args.model}_1600_per_skill.json"
+    with open(output_file, 'w') as f:
+        json.dump(skill_result, f)
+    print("\n")
+
 
 if __name__ == "__main__":
     main()
