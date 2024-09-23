@@ -112,8 +112,9 @@ def main():
     
     os.makedirs(args.result_dir, exist_ok=True)
 
-    dataset =  GenAIBench_1600(root_dir=args.root_dir)
-    result_path = f"{args.result_dir}/{args.model}_1600_prompts.pt"
+    num_prompts = 1600 # number of prompts in GenAI-Bench（1600 in GenAI-Bench paper; 527 in VQAScore paper）
+    dataset =  GenAIBench_Image(root_dir=args.root_dir, num_prompts=num_prompts)
+    result_path = f"{args.result_dir}/{args.model}_{num_prompts}_prompts.pt"
 
     if os.path.exists(result_path):
         print(f"Result file {result_path} already exists. Skipping.")
