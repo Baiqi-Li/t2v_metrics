@@ -6,7 +6,7 @@
 import argparse
 import os
 import t2v_metrics
-from dataset import GenAIBench_Image, GenAIBench_1600
+from dataset import GenAIBench_Image
 import json
 import torch
 import numpy as np
