@@ -1240,6 +1240,8 @@ class GenAIBench_Image(Dataset):
         self.return_image_paths = return_image_paths
         if self.return_image_paths:
             assert self.image_preprocess is None, "Cannot return image paths and apply transforms"
+
+        assert num_prompts in [527, 1600], "Invalid 'num_prompts' value. It must be one of [527, 1600]"
         if num_prompts == 527:
             self.download_links = {
                 model_name: f"https://huggingface.co/datasets/zhiqiulin/GenAI-Bench-527/resolve/main/{model_name}.zip" for model_name in self.models
@@ -1247,7 +1249,7 @@ class GenAIBench_Image(Dataset):
         else:
             self.download_links = {
                 model_name: f"https://huggingface.co/datasets/BaiqiL/GenAI-Bench-1600/resolve/main/{model_name}.zip" for model_name in self.models
-            }            
+            }       
         if not os.path.exists(self.root_dir):
             if download:
                 import subprocess
@@ -1268,6 +1270,7 @@ class GenAIBench_Image(Dataset):
             if not os.path.exists(path):
                 if download:
                     import subprocess
+                    assert num_prompts in [527, 1600], "Invalid 'num_prompts' value. It must be one of [527, 1600]"
                     if num_prompts == 527:
                         download_link = f"https://huggingface.co/datasets/zhiqiulin/GenAI-Bench-527/resolve/main/{filename}.json"
                     else:
@@ -1316,18 +1319,15 @@ class GenAIBench_Image(Dataset):
         item = {"images": image, "texts": texts}
         return item
     
-    def correlation(self, our_scores, human_scores, verbose=True):
+    def correlation(self, our_scores, human_scores):
         pearson = calc_pearson(human_scores, our_scores)
-        if verbose:
-            print(f"Pearson's Correlation (no grouping): ", pearson)
+        print(f"Pearson's Correlation (no grouping): ", pearson)
         
         kendall_b = calc_metric(human_scores, our_scores, variant="tau_b")
-        if verbose:
-            print(f'Kendall Tau-B Score (no grouping): ', kendall_b)
+        print(f'Kendall Tau-B Score (no grouping): ', kendall_b)
         
         pairwise_acc = calc_metric(human_scores, our_scores, variant="pairwise_acc_with_tie_optimization")
-        if verbose:
-            print(f'Pairwise Accuracy Score (no grouping): ', pairwise_acc)
+        print(f'Pairwise Accuracy Score (no grouping): ', pairwise_acc)
         
         results = {
             'pearson': pearson,
@@ -1367,7 +1367,11 @@ class GenAIBench_Image(Dataset):
         for tag in tags:
             our_scores_per_tag = [our_scores[idx] for idx in items_by_tag[tag]]
             human_scores_per_tag = [human_avg_scores_alignment[idx] for idx in items_by_tag[tag]]
-            alignment_correlation_per_tag = self.correlation(our_scores_per_tag, human_scores_per_tag, verbose=False)
+            alignment_correlation_per_tag = {
+                'pearson': calc_pearson(human_scores_per_tag, our_scores_per_tag),
+                'kendall_b': calc_metric(human_scores_per_tag, our_scores_per_tag, variant="tau_b"),
+                'pairwise_acc': calc_metric(human_scores_per_tag, our_scores_per_tag, variant="pairwise_acc_with_tie_optimization"),
+            }
             tag_results[tag] = {
                 'alignment': alignment_correlation_per_tag
             }
