@@ -162,8 +162,8 @@ def main():
     ### Alignment performance per skill
     print("Evaluating scores of each skill for model:", args.model)
     skill_result = dataset.evaluate_scores_per_skill(scores)
-    print("Results saved to:", f"{args.result_dir}/{args.model}_1600_per_skill.json")
-    output_file = f"{args.result_dir}/{args.model}_1600_per_skill.json"
+    print("Results saved to:", f"{args.result_dir}/{args.model}_{num_prompts}_per_skill.json")
+    output_file = f"{args.result_dir}/{args.model}_{num_prompts}_per_skill.json"
     with open(output_file, 'w') as f:
         json.dump(skill_result, f)
     print("\n")
